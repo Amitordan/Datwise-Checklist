@@ -152,6 +152,9 @@
 <script>
   const SUPABASE_URL = "https://kggcokzbadvpslqryrdx.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtnZ2Nva3piYWR2cHNscXJ5cmR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyODU0MTMsImV4cCI6MjA5Nzg2MTQxM30.M48sZqjAeH4ns9FY2aTMvF3lIZ5DoAX-B2hqbD8vAzE";
+  /* כניסה משותפת (לא אבטחה אמיתית — רק מחסום נוחות) */
+  const APP_USER = "datwise";
+  const APP_PASS = "office2026";
 </script>
 <!-- ================================================ -->
 
@@ -166,6 +169,7 @@
       <span class="conn" id="connPill"><span class="dot" id="liveDot"></span><span id="connText">מתחבר…</span></span>
       <span class="user-chip" id="userChip"><span class="avatar" id="userAvatar">–</span><span id="meName">—</span></span>
       <button id="changeName" title="שינוי שם">שינוי שם</button>
+      <button id="logoutBtn" title="התנתקות">התנתקות</button>
     </div>
   </div>
   <div class="progress-wrap">
@@ -281,6 +285,7 @@ function askName(first) {
   input.onkeydown = (e) => { if (e.key === "Enter") save(); };
 }
 document.getElementById("changeName").onclick = () => askName(false);
+document.getElementById("logoutBtn").onclick = () => { localStorage.removeItem("om_auth"); location.reload(); };
 
 /* ---------- יצירת משימה (מודאל) ---------- */
 function openAddTask() {
@@ -530,7 +535,39 @@ function wire() {
   document.querySelectorAll("[data-delnote]").forEach(el => el.onclick = () => deleteNote(el.getAttribute("data-delnote"), +el.getAttribute("data-i")));
 }
 
-init();
+function showLogin() {
+  document.getElementById("progLabel").textContent = "נדרשת התחברות";
+  const { ov } = openOverlay(`
+    <h2>כניסה למערכת</h2>
+    <p>הזן שם משתמש וסיסמה כדי לצפות ולערוך את הצ׳ק ליסט.</p>
+    <label>שם משתמש</label>
+    <input id="loginUser" autocomplete="username">
+    <label>סיסמה</label>
+    <input id="loginPass" type="password" autocomplete="current-password">
+    <div id="loginErr" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none">שם משתמש או סיסמה שגויים</div>
+    <button class="primary" id="loginBtn">כניסה</button>`, false);
+  const u = ov.querySelector("#loginUser");
+  const p = ov.querySelector("#loginPass");
+  const err = ov.querySelector("#loginErr");
+  u.focus();
+  const submit = () => {
+    if (u.value.trim() === APP_USER && p.value === APP_PASS) {
+      localStorage.setItem("om_auth", "1");
+      ov.remove();
+      init();
+    } else {
+      err.style.display = "block"; p.value = ""; p.focus();
+    }
+  };
+  ov.querySelector("#loginBtn").onclick = submit;
+  p.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+  u.onkeydown = (e) => { if (e.key === "Enter") p.focus(); };
+}
+function boot() {
+  if (localStorage.getItem("om_auth") === "1") init();
+  else showLogin();
+}
+boot();
 </script>
 </body>
 </html>
