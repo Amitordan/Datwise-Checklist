@@ -91,14 +91,17 @@
   .icon-btn.danger:hover { background: #fde8e6; color: var(--danger); }
 
   .notes { margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); }
-  .note { font-size: 13px; padding: 5px 0; display: flex; gap: 8px; }
+  .note { font-size: 13px; padding: 5px 0; display: flex; gap: 8px; align-items: center; }
+  .note .note-text { flex: 1; min-width: 0; }
   .note .note-by { font-weight: 600; color: var(--brand); white-space: nowrap; }
   .note .note-meta { color: var(--muted); font-size: 11px; }
   .note .note-text { word-break: break-word; }
   .note-add { display: flex; gap: 7px; margin-top: 7px; }
   .note-add input { flex: 1; min-width: 0; font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   .note-add button { background: var(--brand); color: #fff; border: none; border-radius: 8px; padding: 0 16px; font: inherit; font-size: 13px; cursor: pointer; }
-  .note-toggle { font-size: 12.5px; color: var(--brand); background: none; border: none; cursor: pointer; padding: 4px 0; margin-top: 4px; font-weight: 500; }
+  .notes-label { font-size: 12.5px; color: var(--brand); font-weight: 600; margin-bottom: 4px; }
+  .note-actions { margin-inline-start: auto; display: inline-flex; gap: 2px; flex-shrink: 0; }
+  .note-actions .icon-btn { min-width: 28px; min-height: 28px; font-size: 13px; padding: 4px 5px; }
 
   .overlay { position: fixed; inset: 0; background: rgba(31,41,55,.55); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 18px; }
   .modal { position: relative; background: #fff; border-radius: 16px; padding: 26px 24px; max-width: 460px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
@@ -177,7 +180,6 @@
 let supa = null;
 let tasks = [];
 let myName = localStorage.getItem("om_name") || "";
-const openNotes = new Set();
 const noteDrafts = {};
 const collapsedSections = new Set();
 let firstRender = true;
@@ -360,7 +362,7 @@ async function addNote(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
   const notes = Array.isArray(t.notes) ? t.notes.slice() : [];
   notes.push({ by: myName, text, at: new Date().toISOString() });
-  t.notes = notes; noteDrafts[id] = ""; openNotes.add(id); render();
+  t.notes = notes; noteDrafts[id] = ""; render();
   await supa.from("tasks").update({ notes }).eq("id", id);
 }
 function deleteTask(id) {
@@ -368,6 +370,35 @@ function deleteTask(id) {
   confirmDialog(`למחוק את "${t ? esc(t.title) : "המשימה"}"?`, async () => {
     tasks = tasks.filter(x => x.id !== id); render();
     await supa.from("tasks").delete().eq("id", id); toast("המשימה נמחקה");
+  });
+}
+function editNote(id, i) {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  const notes = Array.isArray(t.notes) ? t.notes : [];
+  const n = notes[i]; if (!n) return;
+  const { ov, close } = openOverlay(`
+    <h2>עריכת הערה</h2>
+    <label>תוכן ההערה</label>
+    <input id="enText" value="${esc(n.text)}">
+    <button class="primary" id="enSave">שמירה</button>`, true);
+  const input = ov.querySelector("#enText"); input.focus();
+  const save = async () => {
+    const v = input.value.trim(); if (!v) { input.focus(); return; }
+    const updated = notes.slice(); updated[i] = { ...n, text: v };
+    t.notes = updated; close(); render(); toast("ההערה עודכנה");
+    await supa.from("tasks").update({ notes: updated }).eq("id", id);
+  };
+  ov.querySelector("#enSave").onclick = save;
+  input.onkeydown = (e) => { if (e.key === "Enter") save(); };
+}
+function deleteNote(id, i) {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  const notes = Array.isArray(t.notes) ? t.notes : [];
+  if (!notes[i]) return;
+  confirmDialog("למחוק את ההערה?", async () => {
+    const updated = notes.slice(); updated.splice(i, 1);
+    t.notes = updated; render(); toast("ההערה נמחקה");
+    await supa.from("tasks").update({ notes: updated }).eq("id", id);
   });
 }
 function deleteSection(sec) {
@@ -447,13 +478,9 @@ function render() {
 }
 function taskHtml(t) {
   const notes = Array.isArray(t.notes) ? t.notes : [];
-  const isOpen = openNotes.has(t.id);
-  let notesHtml = "";
-  if (isOpen) {
-    notesHtml = `<div class="notes">`;
-    for (const n of notes) notesHtml += `<div class="note"><span class="note-by">${esc(n.by)}:</span><span class="note-text">${esc(n.text)} <span class="note-meta">(${fmtDate(n.at)})</span></span></div>`;
-    notesHtml += `<div class="note-add"><input data-note="${t.id}" placeholder="הוסף הערה…" value="${esc(noteDrafts[t.id] || "")}"><button data-addnote="${t.id}">שלח</button></div></div>`;
-  }
+  let notesHtml = `<div class="notes"><div class="notes-label">הערות (${notes.length})</div>`;
+  notes.forEach((n, i) => { notesHtml += `<div class="note"><span class="note-by">${esc(n.by)}:</span><span class="note-text">${esc(n.text)} <span class="note-meta">(${fmtDate(n.at)})</span></span><span class="note-actions"><button class="icon-btn" data-editnote="${t.id}" data-i="${i}" title="עריכת הערה" aria-label="עריכת הערה">✎</button><button class="icon-btn danger" data-delnote="${t.id}" data-i="${i}" title="מחיקת הערה" aria-label="מחיקת הערה">🗑</button></span></div>`; });
+  notesHtml += `<div class="note-add"><input data-note="${t.id}" placeholder="הוסף הערה…" value="${esc(noteDrafts[t.id] || "")}"><button data-addnote="${t.id}">שלח</button></div></div>`;
   const doneInfo = t.done && t.done_by ? `<span class="donemark">✓ ${esc(t.done_by)} · ${fmtDate(t.done_at)}</span>` : "";
   return `<div class="task ${t.done ? "done" : ""}">
     <div class="task-main">
@@ -469,7 +496,6 @@ function taskHtml(t) {
           <span>תאריך יעד: <b class="mv ${dueClass(t.due_date, t.done)}">${t.due_date ? fmtDue(t.due_date) : "—"}</b></span>
           ${doneInfo}
         </div>
-        <button class="note-toggle" data-notetoggle="${t.id}">${isOpen ? "הסתר הערות" : `הערות (${notes.length})`}</button>
         ${notesHtml}
       </div>
     </div>
@@ -495,15 +521,13 @@ function wire() {
   document.querySelectorAll("[data-check]").forEach(el => el.onchange = () => toggleDone(el.getAttribute("data-check"), el.checked));
   document.querySelectorAll("[data-del]").forEach(el => el.onclick = () => deleteTask(el.getAttribute("data-del")));
   document.querySelectorAll("[data-edit]").forEach(el => el.onclick = () => openEditTask(el.getAttribute("data-edit")));
-  document.querySelectorAll("[data-notetoggle]").forEach(el => el.onclick = () => {
-    const id = el.getAttribute("data-notetoggle");
-    openNotes.has(id) ? openNotes.delete(id) : openNotes.add(id); render();
-  });
   document.querySelectorAll("[data-note]").forEach(el => {
     el.oninput = () => { noteDrafts[el.getAttribute("data-note")] = el.value; };
     el.onkeydown = (e) => { if (e.key === "Enter") addNote(el.getAttribute("data-note")); };
   });
   document.querySelectorAll("[data-addnote]").forEach(el => el.onclick = () => addNote(el.getAttribute("data-addnote")));
+  document.querySelectorAll("[data-editnote]").forEach(el => el.onclick = () => editNote(el.getAttribute("data-editnote"), +el.getAttribute("data-i")));
+  document.querySelectorAll("[data-delnote]").forEach(el => el.onclick = () => deleteNote(el.getAttribute("data-delnote"), +el.getAttribute("data-i")));
 }
 
 init();
